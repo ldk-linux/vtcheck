@@ -3,8 +3,7 @@ import time
 import sys
 import os
 
-
-API_KEY = ''  # Replace with your VirusTotal API key
+API_KEY = os.environ['VIRUSTOTAL_API_TOKEN']  # Replace with your VirusTotal API key
 VT_FILE_SCAN_URL = 'https://www.virustotal.com/api/v3/files'
 VT_REPORT_URL = 'https://www.virustotal.com/api/v3/analyses/'
 
@@ -23,25 +22,49 @@ def get_analysis_results(analysis_id):
     headers = {'x-apikey': API_KEY}
     response = requests.get(f"{VT_REPORT_URL}{analysis_id}", headers=headers)
     if response.status_code == 200:
-        print(response.text)
         return response.json()
     else:
         print(f"Error retrieving results: {response.status_code} {response.text}")
         return None
+    
+def get_file_results(file_id):
+    headers = {'x-apikey': API_KEY}
+    response = requests.get(f"{VT_FILE_SCAN_URL}/{file_id}", headers=headers)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Error retrieving file results: {response.status_code} {response.text}")
+        return None
 
 def check_suspicious_content(file_path):
+    malicious = False
+
     analysis_id = submit_file(file_path)
     if not analysis_id:
         print("Failed to submit file.")
         return
     
-    print("File submitted successfully. Waiting for analysis results...")
-    time.sleep(10)  # Wait for analysis to complete, adjust timing as necessary
+    bname = os.path.basename(file_path)
+    print("File " + bname + " submitted successfully. Waiting for analysis results...")
 
-    results = get_analysis_results(analysis_id)
-    if not results:
-        print("Failed to retrieve results.")
-        return
+    done = False
+    file_id = None
+    while not done:
+        time.sleep(30)
+        results = get_analysis_results(analysis_id)
+        if not results:
+            print("Failed to retrieve results.")
+            return
+        if results['data']['attributes']['status'] == 'completed':
+            file_id = results['meta']['file_info']['sha256']
+            done = True
+        elif results['data']['attributes']['status'] != 'queued':
+            print("Received unexpected analys result status: {results['status']}")
+            return
+        
+    print(f"Analysis complete. File ID: {file_id}. Waiting for sandbox analysis...")
+    time.sleep(300)
+    results = get_file_results(file_id)
 
     # Process general scan results
     malicious_count = 0
@@ -54,6 +77,7 @@ def check_suspicious_content(file_path):
 
     if malicious_count > 0:
         print(f"Suspicious content found in general scan! {malicious_count} out of {total_engines} engines flagged the file as malicious.")
+        return
     else:
         print("No suspicious content found in general scan.")
 
@@ -62,10 +86,10 @@ def check_suspicious_content(file_path):
         sandbox_results = results['data']['attributes']['sandbox_verdicts']
         if sandbox_results:
             for sandbox in sandbox_results:
-                if sandbox['verdict'] == 'malicious':
-                    print(f"Sandbox analysis flagged the file as malicious by {sandbox['sandbox_name']}.")
+                if sandbox_results[sandbox]['category'] == 'malicious':
+                    print(f"Sandbox analysis flagged the file as malicious by {sandbox}.")
                 else:
-                    print(f"Sandbox analysis by {sandbox['sandbox_name']} did not flag the file as malicious.")
+                    print(f"Sandbox analysis by {sandbox} did not flag the file as malicious.")
         else:
             print("No sandbox analysis results available.")
     else:
