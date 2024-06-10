@@ -37,7 +37,6 @@ def get_file_results(file_id):
         return None
 
 def check_suspicious_content(file_path):
-    malicious = False
 
     analysis_id = submit_file(file_path)
     if not analysis_id:
@@ -67,16 +66,13 @@ def check_suspicious_content(file_path):
     results = get_file_results(file_id)
 
     # Process general scan results
-    malicious_count = 0
-    total_engines = 0
-    if 'attributes' in results['data'] and 'results' in results['data']['attributes']:
-        for engine, result in results['data']['attributes']['results'].items():
-            total_engines += 1
-            if result['category'] == 'malicious':
-                malicious_count += 1
-
+    if 'attributes' in results['data'] and 'last_analysis_stats' in results['data']['attributes']:
+        if 'malicious' in results['data']['attributes']['last_analysis_stats']:
+            malicious_count = results['data']['attributes']['last_analysis_stats']['malicious']
+        else:
+            malicious_count = 0
     if malicious_count > 0:
-        print(f"Suspicious content found in general scan! {malicious_count} out of {total_engines} engines flagged the file as malicious.")
+        print(f"Suspicious content found in general scan! {malicious_count} engines flagged the file as malicious.")
         return
     else:
         print("No suspicious content found in general scan.")
@@ -100,3 +96,4 @@ if __name__ == '__main__':
         sys.stderr.write("Usage: python vtcheck.py <file to check>" + os.linesep)
         exit(-1)
     check_suspicious_content(sys.argv[1])
+    print("--------------------------------")
